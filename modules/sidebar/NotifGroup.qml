@@ -19,41 +19,22 @@ StyledRect {
     required property DrawerVisibilities visibilities
 
     readonly property list<var> notifs: Notifs.list.filter(n => n.appName === modelData)
-    readonly property var groupProps: {
-        let count = 0;
-        let img = "";
-        let icon = "";
-        let hasCritical = false;
-        let hasNormal = false;
-        for (const n of notifs) {
-            if (!n.closed) {
-                count++;
-                if (!img && n.image.length > 0)
-                    img = n.image;
-                if (!icon && n.appIcon.length > 0)
-                    icon = n.appIcon;
-                if (n.urgency === NotificationUrgency.Critical)
-                    hasCritical = true;
-                else if (n.urgency === NotificationUrgency.Normal)
-                    hasNormal = true;
-            }
-        }
-        return {
-            count,
-            img,
-            icon,
-            urgency: hasCritical ? NotificationUrgency.Critical : hasNormal ? NotificationUrgency.Normal : NotificationUrgency.Low
-        };
+    readonly property list<var> activeNotifs: notifs.filter(n => !n.closed)
+    readonly property int notifCount: activeNotifs.length
+    readonly property string image: activeNotifs.find(n => n.image.length > 0)?.image ?? ""
+    readonly property string appIcon: activeNotifs.find(n => n.appIcon.length > 0)?.appIcon ?? ""
+    readonly property int urgency: {
+        if (activeNotifs.find(n => n.urgency === NotificationUrgency.Critical))
+            return NotificationUrgency.Critical;
+        if (activeNotifs.find(n => n.urgency === NotificationUrgency.Normal))
+            return NotificationUrgency.Normal;
+        return NotificationUrgency.Low;
     }
-    readonly property int notifCount: groupProps.count
-    readonly property string image: groupProps.img
-    readonly property string appIcon: groupProps.icon
-    readonly property int urgency: groupProps.urgency
 
     readonly property int nonAnimHeight: {
-        const headerHeight = header.implicitHeight + (root.expanded ? Math.round(Tokens.spacing.small / 2) : 0);
-        const columnHeight = headerHeight + notifList.layoutHeight + column.Layout.topMargin + column.Layout.bottomMargin;
-        return Math.round(Math.max(TokenConfig.sizes.notifs.image, columnHeight) + Tokens.padding.normal * 2);
+        const headerHeight = header.implicitHeight + (root.expanded ? Math.round(Tokens.spacing.extraSmall) : 0);
+        const columnHeight = headerHeight + notifList.layoutHeight;
+        return Math.round(Math.max(TokenConfig.sizes.notifs.image, columnHeight) + Tokens.padding.medium * 2);
     }
     readonly property bool expanded: props.expandedNotifs.includes(modelData)
 
@@ -73,11 +54,15 @@ StyledRect {
 
     anchors.left: parent?.left
     anchors.right: parent?.right
-    implicitHeight: content.implicitHeight + Tokens.padding.normal * 2
+    implicitHeight: nonAnimHeight
 
     clip: true
-    radius: Tokens.rounding.normal
+    radius: Tokens.rounding.large
     color: Colours.layer(Colours.palette.m3surfaceContainer, 2)
+
+    Behavior on implicitHeight {
+        Anim {}
+    }
 
     RowLayout {
         id: content
@@ -85,9 +70,9 @@ StyledRect {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.margins: Tokens.padding.normal
+        anchors.margins: Tokens.padding.medium
 
-        spacing: Tokens.spacing.normal
+        spacing: Tokens.spacing.medium
 
         Item {
             Layout.alignment: Qt.AlignLeft | Qt.AlignTop
@@ -100,8 +85,10 @@ StyledRect {
                 Image {
                     source: Qt.resolvedUrl(root.image)
                     fillMode: Image.PreserveAspectCrop
-                    sourceSize.width: TokenConfig.sizes.notifs.image
-                    sourceSize.height: TokenConfig.sizes.notifs.image
+                    sourceSize: {
+                        const size = TokenConfig.sizes.notifs.image * ((QsWindow.window as QsWindow)?.devicePixelRatio ?? 1);
+                        return Qt.size(size, size);
+                    }
                     cache: false
                     asynchronous: true
                     width: TokenConfig.sizes.notifs.image
@@ -124,9 +111,9 @@ StyledRect {
                 id: materialIconComp
 
                 MaterialIcon {
-                    text: Icons.getNotifIcon(root.notifs[0]?.summary, root.urgency)
+                    text: Icons.getNotifIcon(root.activeNotifs[0]?.summary, root.urgency)
                     color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : root.urgency === NotificationUrgency.Low ? Colours.palette.m3onSurface : Colours.palette.m3onSecondaryContainer
-                    font.pointSize: Tokens.font.size.large
+                    fontStyle: Tokens.font.icon.medium
                 }
             }
 
@@ -138,6 +125,7 @@ StyledRect {
                 Loader {
                     asynchronous: true
                     anchors.centerIn: parent
+                    anchors.verticalCenterOffset: sourceComponent === materialIconComp ? 1 : 0
                     sourceComponent: root.image ? imageComp : root.appIcon ? appIconComp : materialIconComp
                 }
             }
@@ -166,39 +154,41 @@ StyledRect {
             }
         }
 
-        ColumnLayout {
+        Column {
             id: column
 
-            Layout.topMargin: -Tokens.padding.small
-            Layout.bottomMargin: -Tokens.padding.small / 2
             Layout.fillWidth: true
-            spacing: 0
+            spacing: root.expanded ? Math.round(Tokens.spacing.extraSmall) : 0
+
+            Behavior on spacing {
+                Anim {}
+            }
 
             RowLayout {
                 id: header
 
-                Layout.bottomMargin: root.expanded ? Math.round(Tokens.spacing.small / 2) : 0
-                Layout.fillWidth: true
-                spacing: Tokens.spacing.smaller
+                anchors.left: parent.left
+                anchors.right: parent.right
+                spacing: Tokens.spacing.small
 
                 StyledText {
                     Layout.fillWidth: true
                     text: root.modelData
                     color: Colours.palette.m3onSurfaceVariant
-                    font.pointSize: Tokens.font.size.small
+                    font: Tokens.font.body.small
                     elide: Text.ElideRight
                 }
 
                 StyledText {
                     animate: true
-                    text: root.notifs.find(n => !n.closed)?.timeStr ?? ""
+                    text: root.activeNotifs[0]?.timeStr ?? ""
                     color: Colours.palette.m3outline
-                    font.pointSize: Tokens.font.size.small
+                    font: Tokens.font.body.small
                 }
 
                 StyledRect {
-                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.smaller * 2
-                    implicitHeight: groupCount.implicitHeight + Tokens.padding.small
+                    implicitWidth: expandBtn.implicitWidth + Tokens.padding.large
+                    implicitHeight: groupCount.implicitHeight + Tokens.padding.extraSmall
 
                     color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3error : Colours.layer(Colours.palette.m3surfaceContainerHigh, 3)
                     radius: Tokens.rounding.full
@@ -212,42 +202,34 @@ StyledRect {
                         id: expandBtn
 
                         anchors.centerIn: parent
-                        spacing: Tokens.spacing.small / 2
+                        spacing: Tokens.spacing.extraSmall
 
                         StyledText {
                             id: groupCount
 
-                            Layout.leftMargin: Tokens.padding.small / 2
+                            Layout.leftMargin: Tokens.padding.extraSmall / 2
                             animate: true
                             text: root.notifCount
-                            color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : Colours.palette.m3onSurface
-                            font.pointSize: Tokens.font.size.small
+                            color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : Colours.palette.m3onSurfaceVariant
+                            font: Tokens.font.body.small
                         }
 
                         MaterialIcon {
-                            Layout.rightMargin: -Tokens.padding.small / 2
+                            Layout.rightMargin: -Tokens.padding.extraSmall / 2
                             text: "expand_more"
-                            color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : Colours.palette.m3onSurface
+                            color: root.urgency === NotificationUrgency.Critical ? Colours.palette.m3onError : Colours.palette.m3onSurfaceVariant
                             rotation: root.expanded ? 180 : 0
-                            Layout.topMargin: root.expanded ? -Math.floor(Tokens.padding.smaller / 2) : 0
+                            Layout.topMargin: root.expanded ? -Math.floor(Tokens.padding.extraSmall) : 0
 
                             Behavior on rotation {
-                                Anim {
-                                    type: Anim.DefaultSpatial
-                                }
+                                Anim {}
                             }
 
                             Behavior on Layout.topMargin {
-                                Anim {
-                                    type: Anim.DefaultSpatial
-                                }
+                                Anim {}
                             }
                         }
                     }
-                }
-
-                Behavior on Layout.bottomMargin {
-                    Anim {}
                 }
             }
 

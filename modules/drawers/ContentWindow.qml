@@ -17,6 +17,7 @@ StyledWindow {
     id: root
 
     readonly property alias bar: bar
+    readonly property alias interactionWrapper: interactions
 
     readonly property HyprlandMonitor monitor: Hypr.monitorFor(screen)
     readonly property bool hasSpecialWorkspace: (monitor?.lastIpcObject.specialWorkspace?.name.length ?? 0) > 0
@@ -30,10 +31,13 @@ StyledWindow {
         }
         return monitor?.activeWorkspace?.toplevels.values.some(t => t.lastIpcObject.fullscreen > 1) ?? false;
     }
-    property real borderThickness: hasFullscreen ? 0 : contentItem.Config.border.thickness
+
+    property real fsTransitionProg: hasFullscreen ? 1 : 0
+    readonly property real sdfBorderOffset: 2 * fsTransitionProg // SDFs joins are not exact, so offset by 2px to ensure nothing shows
+    readonly property real borderThickness: contentItem.Config.border.thickness * (1 - fsTransitionProg)
+    readonly property real borderRounding: contentItem.Config.border.rounding * (1 - fsTransitionProg)
+    readonly property real shadowOpacity: 0.7 * (1 - fsTransitionProg)
     readonly property real borderLayoutThickness: hasFullscreen ? 0 : contentItem.Config.border.thickness
-    property real borderRounding: hasFullscreen ? 0 : contentItem.Config.border.rounding
-    property real shadowOpacity: hasFullscreen ? 0 : 0.7
 
     readonly property int dragMaskPadding: {
         if (focusGrab.active || panels.popouts.isDetached)
@@ -53,40 +57,47 @@ StyledWindow {
         visibilities.launcher = false;
         visibilities.session = false;
         visibilities.dashboard = false;
+        panels.popouts.close();
     }
 
     name: "drawers"
     WlrLayershell.exclusionMode: ExclusionMode.Ignore
-    WlrLayershell.layer: WlrLayer.Overlay
-    WlrLayershell.keyboardFocus: visibilities.launcher || visibilities.session || panels.dashboard.needsKeyboard ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+    WlrLayershell.layer: fsTransitionProg > 0 && contentItem.Config.general.showOverFullscreen ? WlrLayer.Overlay : WlrLayer.Top
+    WlrLayershell.keyboardFocus: visibilities.launcher || visibilities.session ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
-    mask: Regions {
-        bar: bar
-        panels: panels
-        win: root
-    }
+    mask: hasFullscreen ? emptyRegion : regions
 
     anchors.top: true
     anchors.bottom: true
     anchors.left: true
     anchors.right: true
 
-    Behavior on borderThickness {
-        Anim {
-            type: Anim.DefaultSpatial
+    Behavior on fsTransitionProg {
+        Anim {}
+    }
+
+    Region {
+        id: emptyRegion
+
+        x: panels.notifications.x + bar.implicitWidth
+        y: panels.notifications.y + root.borderThickness
+        width: panels.notifications.width
+        height: panels.notifications.height
+
+        Region {
+            x: root.width - width
+            y: panels.osdWrapper.y + root.borderThickness
+            width: panels.osdWrapper.width * (1 - panels.osd.offsetScale) + root.borderThickness
+            height: panels.osd.height
         }
     }
 
-    Behavior on borderRounding {
-        Anim {
-            type: Anim.DefaultSpatial
-        }
-    }
+    Regions {
+        id: regions
 
-    Behavior on shadowOpacity {
-        Anim {
-            type: Anim.DefaultSpatial
-        }
+        bar: bar
+        panels: panels
+        win: root
     }
 
     HyprlandFocusGrab {
@@ -110,7 +121,9 @@ StyledWindow {
         color: Colours.palette.m3scrim
 
         Behavior on opacity {
-            Anim {}
+            Anim {
+                type: Anim.SlowEffects
+            }
         }
     }
 
@@ -144,10 +157,10 @@ StyledWindow {
             anchors.margins: -50 // Make border thicker to smooth out bulge from closed drawers
             group: blobGroup
             radius: root.borderRounding
-            borderLeft: bar.implicitWidth - anchors.margins
-            borderRight: root.borderThickness - anchors.margins
-            borderTop: root.borderThickness - anchors.margins
-            borderBottom: root.borderThickness - anchors.margins
+            borderLeft: bar.implicitWidth - anchors.margins - root.sdfBorderOffset
+            borderRight: root.borderThickness - anchors.margins - root.sdfBorderOffset
+            borderTop: root.borderThickness - anchors.margins - root.sdfBorderOffset
+            borderBottom: root.borderThickness - anchors.margins - root.sdfBorderOffset
         }
 
         PanelBg {
@@ -219,9 +232,7 @@ StyledWindow {
             implicitWidth: panels.popouts.width * (1 + extraWidth)
 
             Behavior on extraWidth {
-                Anim {
-                    type: Anim.DefaultSpatial
-                }
+                Anim {}
             }
         }
     }
@@ -233,6 +244,8 @@ StyledWindow {
     }
 
     Interactions {
+        id: interactions
+
         screen: root.screen
         popouts: panels.popouts
         visibilities: visibilities
@@ -303,7 +316,7 @@ StyledWindow {
         y: panel.y + root.borderThickness
         implicitWidth: panel.width
         implicitHeight: panel.height
-        radius: Tokens.rounding.large
-        deformScale: deformAmount / 10000
+        radius: Tokens.rounding.extraLarge
+        deformScale: (deformAmount * Config.appearance.deformScale) / 10000
     }
 }
